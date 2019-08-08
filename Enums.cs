@@ -11,10 +11,9 @@ namespace LoopMachineOsc
 
     public enum MessageType
     {
-      Ack = 0,
-      Reset = 1,
-      SetLed = 2,
-      ButtonStateChanged = 3,
+      Reset = 0,
+      SetLed = 1,
+      ButtonStateChanged = 2,
       Debug = 99
     }
 }

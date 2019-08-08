@@ -21,31 +21,31 @@ namespace LoopMachineOsc
 
       try
       {
-        while (_port.ReadChar() != 0xF0) {}
+        while (_port.ReadByte() != 0xF0) {}
       }
       catch (TimeoutException)
       {
         return null;
       }
 
-      type = (MessageType) _port.ReadChar();
-      value1 = (char) _port.ReadChar();
-      value2 = (char) _port.ReadChar();
+      type = (MessageType) _port.ReadByte();
+      value1 = (char) _port.ReadByte();
+      value2 = (char) _port.ReadByte();
 
-      while (_port.ReadChar() != 0xF7) {}
+      while (_port.ReadByte() != 0xF7) {}
 
       return new SerialMessage(type, value1, value2);
     }
 
     public void Write(SerialMessage msg)
     {
-      char[] buffer = new []
+      byte[] buffer = new []
       {
-        (char)0xF0,
-        (char)msg.Type,
-        msg.Value1,
-        msg.Value2,
-        (char)0xF7
+        (byte)0xF0,
+        (byte)msg.Type,
+        (byte)msg.Value1,
+        (byte)msg.Value2,
+        (byte)0xF7
       };
       _port.Write(buffer, 0, buffer.Length);
     }

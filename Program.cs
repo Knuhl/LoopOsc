@@ -56,6 +56,7 @@ namespace LoopMachineOsc
 
         if (portName != null)
         {
+          Console.WriteLine("Connecting to " + portName);
           int baudRate = configFile.BaudRate < 1 ? 9600 : configFile.BaudRate;
           ISerialPort port = new SerialPortWrapper(portName, baudRate);
           //ReadTimeOut
@@ -93,10 +94,6 @@ namespace LoopMachineOsc
       Console.WriteLine($"Message received {msg.Type} {(int)msg.Value1} {(int)msg.Value2}");
       switch (msg.Type)
       {
-        case MessageType.Ack:
-          if (msg.Value1 == 0 && msg.Value2 == 0)
-            _serialServer.Write(MessageType.Ack, (char)1, (char)0);
-          break;
         case MessageType.ButtonStateChanged:
           UpdateButtonState((ButtonType)msg.Value1, msg.Value2 > 0);
           break;
@@ -107,7 +104,7 @@ namespace LoopMachineOsc
 
     private static void UpdateButtonState(ButtonType button, bool newState)
     {
-
+      Console.WriteLine($"Button {button} changed state to {newState}");
     }
   }
 
