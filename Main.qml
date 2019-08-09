@@ -17,7 +17,7 @@ ApplicationWindow {
         id: repeater
         Column {
           Text { text: modelData.title }
-          Text { text: "LED"; color: modelData.ledColor }
+          Text { text: "LED"; color: modelData.ledColor; }
           Button {
             text: "X"
             width: 20
@@ -30,10 +30,16 @@ ApplicationWindow {
     }
   }
 
+  function updateButtons()
+  {
+    repeater.model = Net.toListModel(vm.buttons)
+  }
+
   MainViewModel {
     id: vm
     Component.onCompleted: {
-      repeater.model = Net.toListModel(vm.buttons)
+      vm.buttonsChanged.connect(updateButtons);
+      updateButtons();
     }
   }
 }

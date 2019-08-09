@@ -73,6 +73,7 @@ namespace LoopMachineOsc
       using (var application = new QGuiApplication(args))
       {
         MainViewModel.App = application;
+        QQmlApplicationEngine.ActivateMVVMBehavior();
         using (var qmlEngine = new QQmlApplicationEngine())
         {
           Qml.Net.Qml.RegisterType<MainViewModel>("LoopMachineOsc");

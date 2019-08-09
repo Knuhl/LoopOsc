@@ -9,9 +9,14 @@ namespace LoopMachineOsc
     private bool _running;
     private int _tempColor = 0;
 
+    private readonly MachineState _state;
+
     public CommunicationServer(SerialServer server)
     {
       _serialServer = server;
+      _state = new MachineState();
+      _state.Reset();
+      // TODO OSC-Server
     }
 
     private void Loop()
@@ -38,9 +43,7 @@ namespace LoopMachineOsc
 
     private void ButtonStateChanged(ButtonType button, bool state)
     {
-      if (!state) return;
-      int c = _tempColor++ % 3;
-      _serialServer.Write(MessageType.SetLed, (char)(int)button, (char)c);
+      _state.ButtonStateChanged(button, state);
     }
 
     public void Run()
