@@ -7,6 +7,8 @@ namespace LoopMachineOsc
 {
   public class SerialServer
   {
+    public static SerialServer Instance { get; private set; }
+
     private readonly ISerialPort _port;
     private bool _running;
 
@@ -18,6 +20,7 @@ namespace LoopMachineOsc
 
     public SerialServer(ISerialPort port)
     {
+      Instance = this;
       _port = port;
 
       Thread readThread = new Thread(Read);
@@ -34,12 +37,6 @@ namespace LoopMachineOsc
     {
       lock (_inQueue)
         return HasMessage() ? _inQueue.Dequeue() : null;
-    }
-
-    public void EnqueueIn(SerialMessage msg)
-    {
-      lock (_inLock)
-        _inQueue.Enqueue(msg);
     }
 
     public void Write(MessageType type, char value1, char value2)

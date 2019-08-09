@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.IO.Ports;
 using System.Threading;
 using System.Linq;
+using Qml.Net;
+using Qml.Net.Runtimes;
 
 namespace LoopMachineOsc
 {
   class Program
   {
-    private static SerialServer _serialServer;
-
     static void Main(string[] args)
     {
       const string configFilePath = "config.json";
@@ -25,13 +25,13 @@ namespace LoopMachineOsc
         configFile.Save(configFilePath);
       }
 
-      while (_serialServer == null)
+      SerialServer serialServer = null;
+      while (serialServer == null)
       {
         string[] ports = SerialPort.GetPortNames();
         if (ports.Length < 1)
         {
-          ISerialPort dummy = new DummyPort();
-          _serialServer = new SerialServer(dummy);
+          serialServer = new SerialServer(DummyPort.Instance);
           //Console.WriteLine("No Ports found, retrying in 1s");
           //Thread.Sleep(1000);
           continue;
@@ -61,50 +61,29 @@ namespace LoopMachineOsc
           ISerialPort port = new SerialPortWrapper(portName, baudRate);
           //ReadTimeOut
           //WriteTimeOut
-          _serialServer = new SerialServer(port);
+          serialServer = new SerialServer(port);
         }
       }
 
-      while (true)
+      CommunicationServer communicationServer = new CommunicationServer(serialServer);
+      communicationServer.RunAsync();
+
+      RuntimeManager.DiscoverOrDownloadSuitableQtRuntime();
+
+      using (var application = new QGuiApplication(args))
       {
-        try
+        MainViewModel.App = application;
+        using (var qmlEngine = new QQmlApplicationEngine())
         {
-          Loop();
+          Qml.Net.Qml.RegisterType<MainViewModel>("LoopMachineOsc");
+
+          qmlEngine.Load("Main.qml");
+
+          var result = application.Exec();
         }
-        catch (Exception e)
-        {
-          Console.WriteLine($"ERROR: {e}");
-        }
       }
-    }
 
-    private static void Loop()
-    {
-      SerialMessage msg;
-      while (_serialServer.HasMessage())
-      {
-        msg = _serialServer.GetNextMessage();
-        EvaluateMessage(msg);
-        msg = null;
-      }
-    }
-
-    private static void EvaluateMessage(SerialMessage msg)
-    {
-      Console.WriteLine($"Message received {msg.Type} {(int)msg.Value1} {(int)msg.Value2}");
-      switch (msg.Type)
-      {
-        case MessageType.ButtonStateChanged:
-          UpdateButtonState((ButtonType)msg.Value1, msg.Value2 > 0);
-          break;
-        default:
-          break;
-      }
-    }
-
-    private static void UpdateButtonState(ButtonType button, bool newState)
-    {
-      Console.WriteLine($"Button {button} changed state to {newState}");
+      communicationServer.Stop();
     }
   }
 
