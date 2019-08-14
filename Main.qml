@@ -6,7 +6,7 @@ import LoopMachineOsc 1.0
 ApplicationWindow {
   id: window
   width: 400
-  height: 500
+  height: 200
   visible: true
   title: "TestWindow"
 
@@ -16,11 +16,16 @@ ApplicationWindow {
       Repeater {
         id: repeater
         Column {
+          width: 50
           Text { text: modelData.title }
-          Text { text: "LED"; color: modelData.ledColor; }
+          Column {
+            height: 50;
+            Text { text: "R"; color: "red"; visible: modelData.redLedVisible; }
+            Text { text: "G"; color: "green"; visible: modelData.greenLedVisible; }
+          }
           Button {
-            text: "X"
-            width: 20
+            text: "o"
+            width: 40
             onClicked: {
               vm.press(modelData.buttonType)
             }

@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace LoopMachineOsc
 {
-  public class SerialServer
+  public class SerialServer : ISerialWriter
   {
     public static SerialServer Instance { get; private set; }
 
@@ -39,10 +39,10 @@ namespace LoopMachineOsc
         return HasMessage() ? _inQueue.Dequeue() : null;
     }
 
-    public void Write(MessageType type, char value1, char value2)
-      => Write(new SerialMessage(type, value1, value2));
+    public void WriteSerial(MessageType type, char value1, char value2)
+      => WriteSerial(new SerialMessage(type, value1, value2));
 
-    public void Write(SerialMessage msg)
+    public void WriteSerial(SerialMessage msg)
     {
       lock (_outLock)
         _outQueue.Enqueue(msg);
@@ -94,5 +94,11 @@ namespace LoopMachineOsc
         }
       }
     }
+  }
+
+  public interface ISerialWriter
+  {
+    void WriteSerial(SerialMessage msg);
+    void WriteSerial(MessageType type, char value1, char value2);
   }
 }

@@ -16,7 +16,9 @@ namespace LoopMachineOsc
     {
       public ButtonType ButtonType { get; set; }
       public string Title => ButtonType.ToString();
-      public string LedColor { get; set; }
+
+      public bool RedLedVisible { get; set; } = false;
+      public bool GreenLedVisible { get; set; } = false;
     }
 
     public List<ButtonViewModel> Buttons { get; }
@@ -57,24 +59,32 @@ namespace LoopMachineOsc
     {
       switch (msg.Type)
       {
+        case MessageType.Reset:
+          foreach (var b in Buttons)
+          {
+            b.RedLedVisible = false;
+            b.GreenLedVisible = false;
+          }
+          break;
         case MessageType.SetLed:
           int led = (int)msg.Value1;
-          int color = (int)msg.Value2;
+          LedColorType color = (LedColorType)(int)msg.Value2;
           var btn = Buttons.First(x => x.ButtonType == (ButtonType)led);
-          string ledColor;
           switch (color)
           {
-            case 1:
-              ledColor = "red";
+            case LedColorType.Off:
+              btn.RedLedVisible = false;
+              btn.GreenLedVisible = false;
               break;
-            case 2:
-              ledColor = "green";
+            case LedColorType.Green:
+              btn.RedLedVisible = false;
+              btn.GreenLedVisible = true;
               break;
-            default:
-              ledColor = "black";
+            case LedColorType.Red:
+              btn.RedLedVisible = true;
+              btn.GreenLedVisible = false;
               break;
           }
-          btn.LedColor = ledColor;
           RaisePropertyChanged(nameof(Buttons));
           break;
       }

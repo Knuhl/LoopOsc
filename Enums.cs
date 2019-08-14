@@ -2,15 +2,14 @@ namespace LoopMachineOsc
 {
     public enum ButtonType
     {
-      Execute = 0,
+      ArmExecute = 0,
       Stop = 1,
       Mode = 2,
-      Reset = 3,
-      UndoClear = 4,
-      Track1 = 5,
-      Track2 = 6,
-      Track3 = 7,
-      Track4 = 8
+      UndoClear = 3,
+      Track1 = 4,
+      Track2 = 5,
+      Track3 = 6,
+      Track4 = 7
     }
 
     public enum MessageType
@@ -28,32 +27,44 @@ namespace LoopMachineOsc
       Play
     }
 
+    public enum ExecuteMode
+    {
+      Arm,
+      Execute
+    }
+
     public enum TrackType
     {
-      Track1 = 5,
-      Track2 = 6,
-      Track3 = 7,
-      Track4 = 8
+      Track1 = 4,
+      Track2 = 5,
+      Track3 = 6,
+      Track4 = 7
     }
 
     public enum TrackRecordState
     {
       Empty,
-      RecordArmed,
       Record,
-      InsertArmed,
       Insert,
-      OverdubArmed,
       Overdub
     }
 
     public enum TrackPlayState
     {
       Empty,
-      MutedArmed,
       Muted,
       MutedPaused,
-      PlayArmed,
       Play
+    }
+
+    public enum LedColorType
+    {
+      Off = 0,
+      Green = 1,
+      Red = 2,
+      BlinkGreen = 3,
+      BlinkRed = 4,
+      GreenBlinkRed = 5,
+      RedBlinkGreen = 6
     }
 }

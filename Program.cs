@@ -66,7 +66,10 @@ namespace LoopMachineOsc
       }
 
       CommunicationServer communicationServer = new CommunicationServer(serialServer);
+      MachineState state = new MachineState(communicationServer);
       communicationServer.RunAsync();
+
+      state.Reset();
 
       RuntimeManager.DiscoverOrDownloadSuitableQtRuntime();
 

@@ -8,134 +8,143 @@ namespace LoopMachineOsc
   {
     private class TrackState
     {
+      public TrackType Track { get; }
+
       public bool IsEmpty { get; set; } = true;
 
-      public TrackPlayState PlayStateBeforeArm { get; private set; }
+      public TrackPlayState PlayState { get; set; } = TrackPlayState.Empty;
+      public TrackPlayState ArmedPlayState { get; set; } = TrackPlayState.Empty;
 
-      private TrackPlayState _playState = TrackPlayState.Empty;
-      public TrackPlayState PlayState
+      public TrackRecordState RecordState { get; set; } = TrackRecordState.Empty;
+      public TrackRecordState ArmedRecordState { get; set; } = TrackRecordState.Empty;
+
+      public TrackState(TrackType track) => Track = track;
+
+      public LedColorType GetLedStatus(LoopMachineMode recPlay, ExecuteMode executeMode)
       {
-        get => _playState;
-        set
+        switch (recPlay)
         {
-          switch (value)
-          {
-            case TrackPlayState.MutedArmed:
-            case TrackPlayState.PlayArmed:
-              PlayStateBeforeArm = _playState;
-              break;
-          }
-          _playState = value;
-        }
-      }
+          case LoopMachineMode.Reset:
+          case LoopMachineMode.Record:
+            switch (executeMode)
+            {
+              case ExecuteMode.Arm:
+                //REC ARM
 
-      public TrackRecordState RecordStateBeforeArm { get; private set; }
+                break;
+              case ExecuteMode.Execute:
+                //REC EXECUTE
+                break;
+            }
+            break;
+          case LoopMachineMode.Play:
 
-      private TrackRecordState _recordState = TrackRecordState.Empty;
-      public TrackRecordState RecordState
-      {
-        get => _recordState;
-        set
-        {
-          switch (value)
-          {
-            case TrackRecordState.RecordArmed:
-            case TrackRecordState.InsertArmed:
-            case TrackRecordState.OverdubArmed:
-              RecordStateBeforeArm = _recordState;
-              break;
-          }
-          _recordState = value;
+            break;
         }
+        return LedColorType.Off;
       }
     }
 
     private static Queue<MachineState> _stateHistory = new Queue<MachineState>(11);
 
+    private readonly ICommunicationServer _communicationServer;
+
     private LoopMachineMode _mode;
-    private bool _executing;
-    private bool _firstRecord;
+    private ExecuteMode _execMode;
+
     private readonly Dictionary<TrackType, TrackState> _trackStates;
-    private readonly HashSet<TrackType> _selectedTracks;
     private readonly Dictionary<ButtonType, DateTime> _buttonPressTime;
 
-    public MachineState()
+    public MachineState(ICommunicationServer communicationServer)
     {
+      _communicationServer = communicationServer;
+      _communicationServer.ButtonStateChanged += ButtonStateChanged;
+
       _mode = LoopMachineMode.Reset;
+      _execMode = ExecuteMode.Arm;
 
       _buttonPressTime = new Dictionary<ButtonType, DateTime>();
-      _trackStates = Enum.GetValues(typeof(TrackType)).Cast<TrackType>().ToDictionary(x => x, x => new TrackState());
-      _selectedTracks = new HashSet<TrackType>();
+      _trackStates = Enum.GetValues(typeof(TrackType)).Cast<TrackType>().ToDictionary(x => x, x => new TrackState(x));
     }
 
     public void Reset()
     {
+      _communicationServer.WriteSerial(MessageType.Reset, (char)0, (char)0);
+
       _mode = LoopMachineMode.Reset;
-      _executing = false;
-      _selectedTracks.Clear();
-      _selectedTracks.Add(TrackType.Track1);
+      _execMode = ExecuteMode.Arm;
 
       foreach (KeyValuePair<TrackType, TrackState> track in _trackStates)
       {
         _trackStates[track.Key].IsEmpty = true;
         _trackStates[track.Key].PlayState = TrackPlayState.Empty;
         _trackStates[track.Key].RecordState = TrackRecordState.Empty;
+        SetLed((ButtonType)track.Key, LedColorType.Off);
       }
-      _trackStates[TrackType.Track1].RecordState = TrackRecordState.RecordArmed;
+      SetLed(ButtonType.ArmExecute, LedColorType.Green);
+      SetLed(ButtonType.Mode, LedColorType.Red);
+
+      _trackStates[TrackType.Track1].ArmedRecordState = TrackRecordState.Record;
+      SetLed(ButtonType.Track1, LedColorType.Green);
     }
 
-    //TODO: react to OSC-messages?
+    private void SetLed(ButtonType ledButton, LedColorType color)
+    {
+      _communicationServer.WriteSerial(MessageType.SetLed, (char)(int)ledButton, (char)(int)color);
+    }
 
     public void ButtonStateChanged(ButtonType button, bool state)
     {
       switch (button)
       {
-          case ButtonType.Execute:
+          case ButtonType.ArmExecute:
             //only care for buttonDown
             if(!state) return;
 
             switch (_mode) //current Mode
             {
               case LoopMachineMode.Reset:
-                _executing = true;
-                _firstRecord = true;
-                _selectedTracks.Add(TrackType.Track1);
+                Console.WriteLine("Executing First Record (now Record Mode)");
+                _execMode = ExecuteMode.Execute;
+                _mode = LoopMachineMode.Record;
                 _trackStates[TrackType.Track1].RecordState = TrackRecordState.Record;
+                _trackStates[TrackType.Track1].ArmedRecordState = TrackRecordState.Empty;
+                _trackStates[TrackType.Track1].PlayState = TrackPlayState.Play;
                 _trackStates[TrackType.Track1].IsEmpty = false;
+                SetLed(ButtonType.ArmExecute, LedColorType.Red);
+                SetLed(ButtonType.Track1, LedColorType.Red);
                 break;
               case LoopMachineMode.Record:
-                if (_firstRecord)
+                switch (_execMode)
                 {
-                  _firstRecord = false;
-                  _executing = true; //stays true
-                  _trackStates[TrackType.Track1].RecordState = TrackRecordState.Overdub;
-                }
-                else
-                {
-                  if (!_executing)
-                  {
-                    _executing = true;
+                  case ExecuteMode.Arm:
+                    //REC from ARM to EXECUTE
+                    Console.WriteLine("Switching from ARM to EXECUTE (Rec Mode)");
+                    _execMode = ExecuteMode.Execute;
+
                     foreach (TrackType track in _trackStates.Keys)
                     {
-                      switch (_trackStates[track].RecordState)
+                      if (_trackStates[track].ArmedRecordState != TrackRecordState.Empty)
                       {
-                        case TrackRecordState.RecordArmed:
-                          _trackStates[track].RecordState = TrackRecordState.Record;
-                          _trackStates[track].IsEmpty = false;
-                          break;
-                        case TrackRecordState.InsertArmed:
-                          _trackStates[track].RecordState = TrackRecordState.Insert;
-                          _trackStates[track].IsEmpty = false;
-                          break;
-                        case TrackRecordState.OverdubArmed:
-                          _trackStates[track].RecordState = TrackRecordState.Overdub;
-                          break;
+                        _trackStates[track].RecordState = _trackStates[track].ArmedRecordState;
+                        _trackStates[track].ArmedRecordState = TrackRecordState.Empty;
+                        _trackStates[track].PlayState = TrackPlayState.Play;
+                        _trackStates[track].ArmedPlayState = TrackPlayState.Empty;
+                        _trackStates[track].IsEmpty = false;
+                        Console.WriteLine($"Recording on {track} ({_trackStates[track].RecordState})");
+                        SetLed((ButtonType)track, LedColorType.Red);
                       }
+                      else
+                        SetLed((ButtonType)track, LedColorType.Off);
                     }
-                  }
-                  else
-                  {
-                    _executing = false;
+
+                    SetLed(ButtonType.ArmExecute, LedColorType.Red);
+                    break;
+                  case ExecuteMode.Execute:
+                    //REC from EXECUTE to ARM
+                    _execMode = ExecuteMode.Arm;
+                    Console.WriteLine("Switching from EXECUTE to ARM (Rec Mode)");
+
                     foreach (TrackType track in _trackStates.Keys)
                     {
                       switch (_trackStates[track].RecordState)
@@ -143,28 +152,57 @@ namespace LoopMachineOsc
                         case TrackRecordState.Record:
                         case TrackRecordState.Insert:
                         case TrackRecordState.Overdub:
-                          _trackStates[track].PlayState = TrackPlayState.Play;
+                          _trackStates[track].RecordState = TrackRecordState.Empty;
+                          _trackStates[track].ArmedRecordState = TrackRecordState.Empty;
                           break;
                       }
+                      SetLed((ButtonType)track, LedColorType.Off);
                     }
-                  }
+
+                    SetLed(ButtonType.ArmExecute, LedColorType.Green);
+                    break;
                 }
                 break;
               case LoopMachineMode.Play:
-                _executing = false;
-
-                foreach (TrackType track in _trackStates.Keys)
+                switch (_execMode)
                 {
-                  switch (_trackStates[track].PlayState)
-                  {
-                    case TrackPlayState.MutedArmed:
-                      _trackStates[track].PlayState = TrackPlayState.Muted;
-                      break;
-                    case TrackPlayState.PlayArmed:
-                      _trackStates[track].PlayState = TrackPlayState.Play;
-                      break;
-                  }
+                  case ExecuteMode.Arm:
+                    //PLAY from ARM to EXECUTE
+                    _execMode = ExecuteMode.Execute;
+                    Console.WriteLine("Switching from ARM to EXECUTE (Play Mode)");
+
+                    foreach (TrackType track in _trackStates.Keys)
+                    {
+                      if (_trackStates[track].ArmedPlayState != TrackPlayState.Empty)
+                      {
+                        _trackStates[track].PlayState = _trackStates[track].ArmedPlayState;
+                        _trackStates[track].ArmedPlayState = TrackPlayState.Empty;
+
+                        switch (_trackStates[track].PlayState)
+                        {
+                          case TrackPlayState.Play:
+                            SetLed((ButtonType)track, LedColorType.Green);
+                            break;
+                          case TrackPlayState.Muted:
+                          case TrackPlayState.MutedPaused:
+                            SetLed((ButtonType)track, LedColorType.Red);
+                            break;
+                        }
+                        Console.WriteLine($"{track} PlayState {_trackStates[track].PlayState}");
+                      }
+                    }
+
+                    SetLed(ButtonType.ArmExecute, LedColorType.Red);
+                    break;
+                  case ExecuteMode.Execute:
+                    //PLAY from EXECUTE to ARM
+                    _execMode = ExecuteMode.Arm;
+                    Console.WriteLine("Switching from EXECUTE to ARM (Play Mode)");
+
+                    SetLed(ButtonType.ArmExecute, LedColorType.Green);
+                    break;
                 }
+
                 break;
             }
             break;
@@ -172,14 +210,19 @@ namespace LoopMachineOsc
             //only care for buttonDown
             if(!state) return;
 
-            if (_mode == LoopMachineMode.Record)
+            //only stop during EXECUTE PLAY mode
+            if (_mode != LoopMachineMode.Play || _execMode != ExecuteMode.Execute)
               return;
+
+            //TODO: Execute/Arm?
 
             foreach (KeyValuePair<TrackType, TrackState> track in _trackStates)
             {
               if(!track.Value.IsEmpty)
               {
                 _trackStates[track.Key].PlayState = TrackPlayState.MutedPaused;
+                _trackStates[track.Key].ArmedPlayState = TrackPlayState.Empty;
+                SetLed((ButtonType)track.Key, LedColorType.Red);
               }
             }
             break;
@@ -187,48 +230,60 @@ namespace LoopMachineOsc
             //only care for buttonDown
             if(!state) return;
 
-            // stay in reset-mode until REC is pressed
+            // stay in reset-mode until EXECUTE is pressed
             if (_mode == LoopMachineMode.Reset)
-              return;
-
-            // REC has to end before MODE-switch
-            if (AnyTrackRecording())
               return;
 
             switch (_mode)
             {
               case LoopMachineMode.Record:
-                //from record to play
+                //from REC to PLAY
                 _mode = LoopMachineMode.Play;
 
-                _selectedTracks.Clear();
+                Console.WriteLine("Switching from REC to PLAY");
 
                 foreach (TrackType track in _trackStates.Keys)
                 {
+                  //stop recording
+                  if (_trackStates[track].RecordState != TrackRecordState.Empty)
+                  {
+                    _trackStates[track].RecordState = TrackRecordState.Empty;
+                  }
+
+                  //update LED to play-status
                   switch (_trackStates[track].PlayState)
                   {
-                    case TrackPlayState.MutedArmed:
+                    case TrackPlayState.Empty:
+                      SetLed((ButtonType)track, LedColorType.Off);
+                      break;
+                    case TrackPlayState.Play:
+                      SetLed((ButtonType)track, LedColorType.Green);
+                      break;
                     case TrackPlayState.Muted:
                     case TrackPlayState.MutedPaused:
-                      _trackStates[track].PlayState = TrackPlayState.Play;
+                      SetLed((ButtonType)track, LedColorType.Red);
                       break;
                   }
                 }
+
+                SetLed(ButtonType.Mode, LedColorType.Green);
                 break;
               case LoopMachineMode.Play:
-                //from play to record
+                //from PLAY to RECORD
                 _mode = LoopMachineMode.Record;
 
-                _selectedTracks.Clear();
+                Console.WriteLine("Switching from PLAY to REC");
+
+                //all LED off - nothing armed / executing
+                foreach (TrackType track in _trackStates.Keys)
+                {
+                  _trackStates[track].ArmedRecordState = TrackRecordState.Empty;
+                  SetLed((ButtonType)track, LedColorType.Off);
+                }
+
+                SetLed(ButtonType.Mode, LedColorType.Red);
                 break;
             }
-            break;
-          case ButtonType.Reset:
-            //TODO: no use for reset buton, CLEAR
-            //only care for buttonDown
-            if(!state) return;
-
-            Reset();
             break;
           case ButtonType.UndoClear:
             if (state)
@@ -249,93 +304,154 @@ namespace LoopMachineOsc
             }
             break;
           case ButtonType.Track1:
-            ToggleTrackState(_trackStates[TrackType.Track1]);
+            ToggleTrackState(_trackStates[TrackType.Track1], state);
             break;
           case ButtonType.Track2:
-            ToggleTrackState(_trackStates[TrackType.Track2]);
+            ToggleTrackState(_trackStates[TrackType.Track2], state);
             break;
           case ButtonType.Track3:
-            ToggleTrackState(_trackStates[TrackType.Track3]);
+            ToggleTrackState(_trackStates[TrackType.Track3], state);
             break;
           case ButtonType.Track4:
-            ToggleTrackState(_trackStates[TrackType.Track4]);
+            ToggleTrackState(_trackStates[TrackType.Track4], state);
             break;
       }
     }
 
-    private void ToggleTrackState(TrackState track)
+    private void ToggleTrackState(TrackState track, bool state)
     {
+      if (!state) return;
+
+      Console.WriteLine($"Toggling {track.Track} State in {_mode} {_execMode} Mode");
+      Console.WriteLine($"Play {track.PlayState} (Armed: {track.ArmedPlayState}) Rec {track.RecordState} (Armed: {track.ArmedRecordState})");
       switch (_mode)
       {
         case LoopMachineMode.Reset: return;
         case LoopMachineMode.Record:
-          switch (track.RecordState)
+          LedColorType recColor = LedColorType.Off;
+          switch (_execMode)
           {
-              case TrackRecordState.Empty:
-                track.RecordState = _executing
-                                ? (track.IsEmpty ? TrackRecordState.Insert : TrackRecordState.Overdub)
-                                : (track.IsEmpty ? TrackRecordState.InsertArmed : TrackRecordState.OverdubArmed);
-                break;
-              case TrackRecordState.RecordArmed:
-                track.RecordState = track.RecordStateBeforeArm;
-                ToggleTrackState(track);
-                break;
-              case TrackRecordState.Record:
-                track.RecordState = TrackRecordState.Overdub;
-                break;
-              case TrackRecordState.InsertArmed:
-                if (!track.IsEmpty)
-                  track.RecordState = TrackRecordState.OverdubArmed;
-                else
-                  track.RecordState = track.RecordStateBeforeArm;
-                break;
-              case TrackRecordState.Insert:
-                if (!track.IsEmpty)
-                  track.RecordState = TrackRecordState.Overdub;
-                break;
-              case TrackRecordState.OverdubArmed:
-                track.RecordState = TrackRecordState.InsertArmed;
-                break;
-              case TrackRecordState.Overdub:
-                track.RecordState = TrackRecordState.Insert;
-                break;
+            case ExecuteMode.Arm:
+              //in ARM RECORD mode
+              switch (track.ArmedRecordState)
+              {
+                case TrackRecordState.Empty:
+                  //TODO: can Insert be skipped by directly going into OVERDUB on empty track?
+                  track.ArmedRecordState = track.IsEmpty ? TrackRecordState.Insert : TrackRecordState.Overdub;
+                  recColor = LedColorType.Green;
+                  break;
+                case TrackRecordState.Overdub:
+                  if (!track.IsEmpty)
+                  {
+                    if (track.Track == TrackType.Track1)
+                      track.ArmedRecordState = TrackRecordState.Record;
+                    else
+                      track.ArmedRecordState = TrackRecordState.Insert;
+                    recColor = LedColorType.Green;
+                  }
+                  else
+                  {
+                    track.ArmedRecordState = TrackRecordState.Empty;
+                    recColor = LedColorType.Off;
+                  }
+                  break;
+                case TrackRecordState.Insert:
+                case TrackRecordState.Record:
+                  track.ArmedRecordState = TrackRecordState.Empty;
+                  recColor = LedColorType.Off;
+                  break;
+              }
+              break;
+            case ExecuteMode.Execute:
+              //in EXECUTE RECORD mode
+              switch (track.RecordState)
+              {
+                case TrackRecordState.Empty:
+                  //TODO: can Insert be skipped by directly going into OVERDUB on empty track?
+                  track.RecordState = track.IsEmpty ? TrackRecordState.Insert : TrackRecordState.Overdub;
+                  track.IsEmpty = false;
+                  track.PlayState = TrackPlayState.Play;
+                  track.ArmedPlayState = TrackPlayState.Empty;
+                  recColor = LedColorType.Red;
+                  break;
+                case TrackRecordState.Insert:
+                  //track.RecordState = TrackRecordState.Overdub;
+                  //recColor = LedColorType.Red;
+                  //break;
+                case TrackRecordState.Overdub:
+                case TrackRecordState.Record:
+                  track.RecordState = TrackRecordState.Empty;
+                  recColor = LedColorType.Off;
+                  break;
+              }
+              break;
           }
+          SetLed((ButtonType)track.Track, recColor);
           break;
         case LoopMachineMode.Play:
 
-          switch (track.PlayState)
+          //ignore if track is empty
+          if (track.IsEmpty || track.PlayState == TrackPlayState.Empty)
+            return;
+
+          LedColorType playColor = LedColorType.Off;
+          switch (_execMode)
           {
-            case TrackPlayState.Empty:
+            case ExecuteMode.Arm:
+              //in ARM PLAY mode
+              switch (track.ArmedPlayState)
+              {
+                case TrackPlayState.Empty:
+                  switch (track.PlayState)
+                  {
+                    case TrackPlayState.Play:
+                      track.ArmedPlayState = TrackPlayState.Muted;
+                      playColor = LedColorType.Red;
+                      break;
+                    case TrackPlayState.MutedPaused:
+                    case TrackPlayState.Muted:
+                      track.ArmedPlayState = TrackPlayState.Play;
+                      playColor = LedColorType.Green;
+                      break;
+                  }
+                  break;
+                case TrackPlayState.Muted:
+                case TrackPlayState.MutedPaused:
+                  track.ArmedPlayState = TrackPlayState.Empty;
+                  //was armed for mute, now armed for nothing again -> play = green
+                  playColor = LedColorType.Green;
+                  break;
+                case TrackPlayState.Play:
+                  track.ArmedPlayState = TrackPlayState.Empty;
+                  //was armed for play, now armed for nothing again -> muted = red
+                  playColor = LedColorType.Red;
+                  break;
+              }
               break;
-            case TrackPlayState.MutedArmed:
-            case TrackPlayState.PlayArmed:
-              track.PlayState = track.PlayStateBeforeArm;
-              break;
-            case TrackPlayState.Muted:
-            case TrackPlayState.MutedPaused:
-              track.PlayState = TrackPlayState.PlayArmed;
-              break;
-            case TrackPlayState.Play:
-              track.PlayState = TrackPlayState.MutedArmed;
+            case ExecuteMode.Execute:
+              //in EXECUTE PLAY mode
+              switch (track.PlayState)
+              {
+                case TrackPlayState.Empty:
+                  break;
+                case TrackPlayState.Muted:
+                case TrackPlayState.MutedPaused:
+                  track.PlayState = TrackPlayState.Play;
+                  playColor = LedColorType.Green;
+                  break;
+                case TrackPlayState.Play:
+                  track.PlayState = TrackPlayState.Muted;
+                  playColor = LedColorType.Red;
+                  break;
+              }
               break;
           }
+
+          SetLed((ButtonType)track.Track, playColor);
           break;
       }
-    }
 
-    private bool AnyTrackRecording()
-    {
-      foreach (KeyValuePair<TrackType, TrackState> track in _trackStates)
-      {
-        switch (track.Value.RecordState)
-        {
-          case TrackRecordState.Record:
-          case TrackRecordState.Insert:
-          case TrackRecordState.Overdub:
-            return true;
-        }
-      }
-      return false;
+      Console.WriteLine($"-> Play {track.PlayState} (Armed: {track.ArmedPlayState}) Rec {track.RecordState} (Armed: {track.ArmedRecordState})");
     }
   }
 }
